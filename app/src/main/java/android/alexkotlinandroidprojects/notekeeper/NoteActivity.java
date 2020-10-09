@@ -3,9 +3,12 @@ package android.alexkotlinandroidprojects.notekeeper;
 import android.content.Intent;
 import android.os.Bundle;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
+import androidx.lifecycle.ViewModelProvider;
 
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.ArrayAdapter;
@@ -15,6 +18,7 @@ import android.widget.Spinner;
 import java.util.List;
 
 public class NoteActivity extends AppCompatActivity {
+    private final String TAG = getClass().getSimpleName();
     //Name this String with the package name Prepended on it, as I am going to send this
     //as an Extra with my Intent in NoteListActivity, and Extras can come from 3rd parties,
     //so the package name will indicate this is from me!
@@ -27,9 +31,7 @@ public class NoteActivity extends AppCompatActivity {
     private EditText mTextNoteText;
     private int mNotePosition;
     private Boolean mIsCanceling;
-    private String mOriginalNoteCourseId;
-    private String mOriginalNoteTitle;
-    private String mOriginalNoteText;
+    private NoteActivityViewModel mViewModel;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -37,6 +39,19 @@ public class NoteActivity extends AppCompatActivity {
         setContentView(R.layout.activity_note);
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
+
+        //Boilerplate code!!!
+        ViewModelProvider viewModelProvider = new ViewModelProvider(getViewModelStore(),
+                ViewModelProvider.AndroidViewModelFactory.getInstance(getApplication()));
+        //Boilerplate code!!
+
+        mViewModel = viewModelProvider.get(NoteActivityViewModel.class);
+//        ^^ 'get's an Instance of the "ViewModel" class ^^^ and saves it to the designated variable
+
+        if (mViewModel.mIsNewlyCreated && savedInstanceState != null)
+            mViewModel.restoreState(savedInstanceState);
+
+        mViewModel.mIsNewlyCreated = false;
 
         mSpinnerCourses = findViewById(R.id.spinner_courses);
 
@@ -59,15 +74,24 @@ public class NoteActivity extends AppCompatActivity {
 
         if(!mIsNewNote)
             displayNote(mSpinnerCourses, mTextNoteTitle, mTextNoteText);
+
+        Log.d(TAG, "onCreate");
     }
 
     private void saveOriginalNoteValues() {
         if(!mIsNewNote)
             return;
 
-        mOriginalNoteCourseId = mNote.getCourse().getCourseId();
-        mOriginalNoteTitle = mNote.getTitle();
-        mOriginalNoteText = mNote.getText();
+        mViewModel.mOriginalNoteCourseId = mNote.getCourse().getCourseId();
+        mViewModel.mOriginalNoteTitle = mNote.getTitle();
+        mViewModel.mOriginalNoteText = mNote.getText();
+    }
+
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (outState != null)
+            mViewModel.saveState(outState);
     }
 
     @Override
@@ -75,20 +99,22 @@ public class NoteActivity extends AppCompatActivity {
         super.onPause();
 
         if (mIsCanceling && mIsNewNote) {
+            Log.i(TAG, "Canceling note at position: " + mNotePosition);
             DataManager.getInstance().removeNote(mNotePosition);
         } else if (mIsCanceling && !mIsNewNote) {
+            Log.i(TAG, "Canceling note at position: " + mNotePosition);
             storePreviousNoteValues();
         } else {
             saveNote();
         }
-
+        Log.d(TAG, "onPause");
     }
 
     private void storePreviousNoteValues() {
-        CourseInfo course = DataManager.getInstance().getCourse(mOriginalNoteCourseId);
+        CourseInfo course = DataManager.getInstance().getCourse(mViewModel.mOriginalNoteCourseId);
         mNote.setCourse(course);
-        mNote.setTitle(mOriginalNoteTitle);
-        mNote.setText(mOriginalNoteText);
+        mNote.setTitle(mViewModel.mOriginalNoteTitle);
+        mNote.setText(mViewModel.mOriginalNoteText);
     }
 
     private void saveNote() {
@@ -110,23 +136,22 @@ public class NoteActivity extends AppCompatActivity {
         Intent intent = getIntent();
 //        VVV This gets the position sent over in the Intent to look in the
 //        VVV DataManager singleton and find the specific Note the user has selected
-        int position = intent.getIntExtra(NOTE_POSITION, POSITION_NOT_SET);
+        mNotePosition = intent.getIntExtra(NOTE_POSITION, POSITION_NOT_SET);
 //        VVV This is a Boolean (empty var declared above) checking if
 //        VVV this Note exists within the DataManager, or if we got null or something
-        mIsNewNote = position == POSITION_NOT_SET;
+        mIsNewNote = mNotePosition == POSITION_NOT_SET;
 //        VVV As long as the above Boolean is not false, we will get the selected
 //        VVV Note info from the DataManager here
         if (mIsNewNote) {
             createNewNote();
-        } else {
-            mNote = DataManager.getInstance().getNotes().get(position);
         }
+        Log.i(TAG, "mNotePosition: " + mNotePosition);
+        mNote = DataManager.getInstance().getNotes().get(mNotePosition);
     }
 
     private void createNewNote() {
         DataManager dm = DataManager.getInstance();
         mNotePosition = dm.createNewNote();
-        mNote = dm.getNotes().get(mNotePosition);
     }
 
     @Override
